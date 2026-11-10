@@ -1,0 +1,50 @@
+{
+  "name": "dsh-model3d-studio",
+  "version": "1.0.0",
+  "private": false,
+  "type": "module",
+  "description": "A 3D modeling agent preset for DSH: Specification/Model conversation tabs, engineering spec tool, and build123d model generation.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./runner.py": "./runner.py",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./preset": "./preset.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "runner.py",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "preset.js",
+    "PUBLISHING.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "3d",
+    "cad",
+    "build123d",
+    "stl"
+  ]
+}

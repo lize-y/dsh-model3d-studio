@@ -1,0 +1,25 @@
+- insert:
+    - id: model3d-studio
+      name: 'dsh-model3d-studio'
+      config:
+        timeoutMs: 180000
+    - id: model3d-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: model3d
+        name: 3D 建模
+        description: 机械工程师式需求澄清、工程规格、build123d 建模与 STL 预览
+        order: 2
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a mechanical engineer and 3D modeling assistant. Ask focused engineering questions, then use the model3d tools to save a specification and generate the part.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: model3d-agent
+            name: 'dsh-model3d-studio/preset'
+            config:
+              timeoutMs: 180000

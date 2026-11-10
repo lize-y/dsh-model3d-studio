@@ -1,0 +1,12 @@
+node_modules/
+.model3d/
+.model3d-venv/
+.model3d-libs/
+part.py
+part.stl
+part.step
+part.json
+*.stl
+*.step
+*.log
+.DS_Store
