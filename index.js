@@ -1578,6 +1578,44 @@ export function apply(ctx, config = {}) {
     sendJson(res, 201, value)
   }
 
+  async function handleSpecDrawing(req, res) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      throw new HttpError(405, 'method-not-allowed', '仅支持 GET')
+    }
+    const url = new URL(req.url ?? '/', 'http://x')
+    const sessionId = url.searchParams.get('sessionId') ?? ''
+    const baseCwd = sessionDirectory(ctx, sessionId)
+    if (!baseCwd) throw new HttpError(404, 'session-unavailable', '当前会话目录不可用')
+    const dir = sessionWorkDir(baseCwd, sessionId)
+    const target = path.join(dir, 'spec-drawing.svg')
+    try {
+      await access(target)
+    } catch {
+      const rendered = await runProcess(
+        python,
+        [path.join(HERE, 'specdraw.py'), dir, target],
+        { cwd: dir, env: subprocessEnv(root, root, dir, config), timeoutMs: 30000 },
+      )
+      if (rendered.code !== 0) {
+        throw new HttpError(404, 'no-spec', '还没有可绘制的工程规格')
+      }
+    }
+    const info = await stat(target)
+    const headers = {
+      'content-type': 'image/svg+xml',
+      'content-length': info.size,
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    }
+    res.writeHead(200, headers)
+    if (req.method === 'HEAD') {
+      res.end()
+      return
+    }
+    const { createReadStream } = await import('node:fs')
+    createReadStream(target).pipe(res)
+  }
+
   async function handleSessionState(req, res) {
     if (req.method !== 'GET') throw new HttpError(405, 'method-not-allowed', '仅支持 GET')
     const url = new URL(req.url ?? '/', 'http://x')
@@ -1631,6 +1669,9 @@ export function apply(ctx, config = {}) {
       spec: spec ?? state?.spec ?? null,
       specText,
       drawings: model ? drawingUrls(sessionId) : null,
+      specDrawingUrl: specText
+        ? `${ROUTE}/spec-drawing?sessionId=${encodeURIComponent(sessionId)}`
+        : null,
       model,
       hasSpec: Boolean(spec ?? state?.spec),
       hasModel: Boolean(model),
@@ -1747,6 +1788,7 @@ export function apply(ctx, config = {}) {
       if (rest === 'chat') return await handleChat(req, res)
       if (rest === 'generate') return await handleGenerate(req, res)
       if (rest === 'session-state') return await handleSessionState(req, res)
+      if (rest === 'spec-drawing') return await handleSpecDrawing(req, res)
       if (rest.startsWith('session-files/')) return await handleSessionFiles(req, res, rest.slice('session-files/'.length))
       if (rest.startsWith('files/')) return await handleFiles(req, res, rest.slice(6))
       throw new HttpError(404, 'not-found', '未知接口')

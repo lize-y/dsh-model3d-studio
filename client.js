@@ -129,7 +129,9 @@ window.__ModuleLoader__.load({
       },
       drawing: {
         alt: '三视图工程图纸',
+        altSpec: '规格草图三视图',
         caption: '三视图 · 第一角投影 · 单位 mm',
+        captionSpec: '规格草图 · 按 part.spec.md 推定 · 单位 mm',
         note: '由模型自动生成的三视图（虚线为不可见轮廓）',
       },
       session: {
@@ -323,7 +325,9 @@ window.__ModuleLoader__.load({
       },
       drawing: {
         alt: 'Three-view engineering drawing',
+        altSpec: 'Specification schematic three views',
         caption: 'Three views · first-angle projection · mm',
+        captionSpec: 'Spec sketch · derived from part.spec.md · mm',
         note: 'Three views generated from the model (dashed lines are hidden edges)',
       },
       session: {
@@ -2945,9 +2949,8 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
       return h('div', { className: 'm3d-doc-body' }, blocks)
     }
 
-    function DrawingSheet({ drawings, t, sessionId }) {
-      const sheet = drawings && drawings.sheet
-      if (!sheet) return null
+    function DrawingSheet({ source, caption, alt, t, fileName }) {
+      if (!source) return null
       return h(
         'div',
         { className: 'm3d-drawing' },
@@ -2955,22 +2958,22 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
           'figure',
           { className: 'm3d-drawing-view' },
           h('img', {
-            src: sheet,
-            alt: t('drawing.alt'),
+            src: source,
+            alt: alt || t('drawing.alt'),
             loading: 'lazy',
             draggable: false,
           }),
           h(
             'figcaption',
             null,
-            h('span', null, t('drawing.caption')),
+            h('span', null, caption),
             h(
               'a',
               {
                 className: 'm3d-drawing-link',
-                href: `${sheet}?download=1`,
-                download: 'drawing.svg',
-                title: 'drawing.svg',
+                href: `${source}${source.includes('?') ? '&' : '?'}download=1`,
+                download: fileName || 'drawing.svg',
+                title: fileName || 'drawing.svg',
               },
               h(Icon, { name: 'download', size: 11 }),
               'SVG',
@@ -3005,7 +3008,9 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
         })
       }
       const docText = typeof state.data?.specText === 'string' ? state.data.specText.trim() : ''
-      const hasDrawings = Boolean(state.data?.drawings)
+      const modelSheet = state.data?.drawings?.sheet
+      const specSheet = state.data?.specDrawingUrl
+      const hasDrawings = Boolean(modelSheet || specSheet)
       if (docText || hasDrawings) {
         return h(
           'div',
@@ -3032,7 +3037,13 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
                 ),
               ),
               hasDrawings
-                ? h(DrawingSheet, { drawings: state.data.drawings, t, sessionId })
+                ? h(DrawingSheet, {
+                    source: modelSheet || specSheet,
+                    caption: modelSheet ? t('drawing.caption') : t('drawing.captionSpec'),
+                    alt: modelSheet ? t('drawing.alt') : t('drawing.altSpec'),
+                    fileName: modelSheet ? 'drawing.svg' : 'spec-drawing.svg',
+                    t,
+                  })
                 : null,
               docText
                 ? h(MarkdownDoc, { text: docText, t })
