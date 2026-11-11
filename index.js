@@ -46,7 +46,7 @@ const SESSION_FILES = {
   'drawing-top.svg': 'image/svg+xml',
   'drawing-right.svg': 'image/svg+xml',
 }
-const DRAWING_FILES = ['drawing.svg', 'drawing-front.svg', 'drawing-top.svg', 'drawing-right.svg']
+const DRAWING_FILES = ['drawing.svg']
 const MIME = {
   'model.stl': 'model/stl',
   'model.step': 'application/step',
@@ -1102,7 +1102,7 @@ export async function compileSessionModel(ctx, config, root, python, baseCwd, se
   const codePath = path.join(runDir, 'generated.py')
   await writeFile(codePath, `${code.trim()}\n`, 'utf8')
 
-  const result = await runProcess(python, [path.join(HERE, 'runner.py'), codePath], {
+  const result = await runProcess(python, [path.join(HERE, 'runner.py'), codePath, dir], {
     cwd: runDir,
     env: subprocessEnv(root, root, runDir, config),
     timeoutMs: config.timeoutMs ?? 180000,

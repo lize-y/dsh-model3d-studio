@@ -128,9 +128,8 @@ window.__ModuleLoader__.load({
         invalid: '实体待检查',
       },
       drawing: {
-        front: '主视图',
-        top: '俯视图',
-        right: '左视图',
+        alt: '三视图工程图纸',
+        caption: '三视图 · 第一角投影 · 单位 mm',
         note: '由模型自动生成的三视图（虚线为不可见轮廓）',
       },
       session: {
@@ -323,9 +322,8 @@ window.__ModuleLoader__.load({
         invalid: 'Needs review',
       },
       drawing: {
-        front: 'Front',
-        top: 'Top',
-        right: 'Left',
+        alt: 'Three-view engineering drawing',
+        caption: 'Three views · first-angle projection · mm',
         note: 'Three views generated from the model (dashed lines are hidden edges)',
       },
       session: {
@@ -1139,21 +1137,29 @@ window.__ModuleLoader__.load({
 .m3d-doc-source { color: var(--dsw-alias-label-secondary); font-size: 10.5px; text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
 .m3d-doc-source:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
 .m3d-drawing { margin: 0 0 18px; }
-.m3d-drawing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .m3d-drawing-view {
   margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 6px;
-  padding: 10px 8px 8px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
 }
-.m3d-drawing-view img { width: 100%; height: auto; max-height: 190px; object-fit: contain; display: block; }
-.m3d-drawing-view figcaption { font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
-.m3d-drawing-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
+.m3d-drawing-view img {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #ffffff;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+}
+.m3d-drawing-view figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-secondary);
+}
 .m3d-drawing-link { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
 .m3d-drawing-link:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
 .m3d-doc-hint { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
@@ -2939,44 +2945,37 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
       return h('div', { className: 'm3d-doc-body' }, blocks)
     }
 
-    function DrawingSheet({ drawings, t }) {
-      const views = [
-        ['front', t('drawing.front')],
-        ['top', t('drawing.top')],
-        ['right', t('drawing.right')],
-      ]
+    function DrawingSheet({ drawings, t, sessionId }) {
+      const sheet = drawings && drawings.sheet
+      if (!sheet) return null
       return h(
         'div',
         { className: 'm3d-drawing' },
         h(
-          'div',
-          { className: 'm3d-drawing-grid' },
-          views.map(([key, label]) =>
+          'figure',
+          { className: 'm3d-drawing-view' },
+          h('img', {
+            src: sheet,
+            alt: t('drawing.alt'),
+            loading: 'lazy',
+            draggable: false,
+          }),
+          h(
+            'figcaption',
+            null,
+            h('span', null, t('drawing.caption')),
             h(
-              'figure',
-              { className: 'm3d-drawing-view', key },
-              h('img', {
-                src: drawings[key],
-                alt: label,
-                loading: 'lazy',
-                draggable: false,
-              }),
-              h('figcaption', null, label),
+              'a',
+              {
+                className: 'm3d-drawing-link',
+                href: `${sheet}?download=1`,
+                download: 'drawing.svg',
+                title: 'drawing.svg',
+              },
+              h(Icon, { name: 'download', size: 11 }),
+              'SVG',
             ),
           ),
-        ),
-        h(
-          'div',
-          { className: 'm3d-drawing-foot' },
-          h('span', null, t('drawing.note')),
-          drawings.sheet
-            ? h(
-                'a',
-                { className: 'm3d-drawing-link', href: `${drawings.sheet}?download=1`, download: 'drawing.svg' },
-                h(Icon, { name: 'download', size: 11 }),
-                'SVG',
-              )
-            : null,
         ),
       )
     }
@@ -3033,7 +3032,7 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
                 ),
               ),
               hasDrawings
-                ? h(DrawingSheet, { drawings: state.data.drawings, t })
+                ? h(DrawingSheet, { drawings: state.data.drawings, t, sessionId })
                 : null,
               docText
                 ? h(MarkdownDoc, { text: docText, t })
