@@ -31,6 +31,17 @@
 
 预设注册运行时技能 `model3d-modeling`：build123d API 速查、坐标约定、典型结构、常见陷阱与 `part.spec.md` 格式。AI 用 `skill` 工具按需加载，不需要读取其他会话的代码。
 
+## 图纸
+
+两个阶段各有一张图：
+
+| 阶段 | 文件 | 内容 |
+| --- | --- | --- |
+| 规格锁定后（未建模） | `spec-drawing.svg` | 按 `part.spec.md` 推算的示意三视图：包络、壁厚、孔系、主要尺寸 |
+| 模型生成后 | `drawing.svg` | 由真实几何 HLR 投影的三视图：尺寸线、孔系标注、标题栏 |
+
+“规格”标签优先显示 `drawing.svg`；模型还没生成时自动显示 `spec-drawing.svg`，这样规格一出来就有图可看，不用等代码。
+
 ## 三视图
 
 `model3d_build` 会生成一张 A4 横向的工程图纸 `drawing.svg`：
