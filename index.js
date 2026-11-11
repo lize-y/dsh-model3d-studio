@@ -68,8 +68,9 @@ export const MODEL3D_SYSTEM = `## 3D 建模工作区
    - 不要调用导出函数（export_stl / export_step / export_gltf / export_brep），不要写文件、不要联网，不要使用 exec / eval / open / subprocess / __import__。
 3. 同时在 {{model3d_dir}} 里写一个 part.spec.md，用 Markdown 写工程制图描述：标题、总体尺寸、几何特征（每项一行，含尺寸与位置）、材料、工艺、公差、表面、假设、制图备注。这是“规格”标签页显示的内容，保持精炼（每行一句话，总长 1200 字以内），不要写 JSON。
 4. 然后调用 model3d_build 工具：它只负责编译并运行该目录下的 part.py、校验几何、导出 STL/STEP 并刷新“模型”标签页。不要让工具传代码，工具从会话目录读取文件。
-5. 如果工具返回 Python 或几何错误，直接修改 part.py 后再次调用 model3d_build。不要伪造成功结果，也不要连续重试超过 3 次。
-6. 生成成功后告诉用户模型已生成，并说明该会话目录下的 part.py、part.stl、part.step，以及对话顶部的“规格”“模型”标签可以查看结果。`
+5. 需要 build123d 用法、坐标约定或常见陷阱时，加载 model3d-modeling 技能（skill 工具）。不要为了找示例去读取其他会话目录里的 part.py / part.json——那是别的零件，不是参考模板。
+6. 如果工具返回 Python 或几何错误，直接修改 part.py 后再次调用 model3d_build。不要伪造成功结果，也不要连续重试超过 3 次。
+7. 生成成功后告诉用户模型已生成，并说明该会话目录下的 part.py、part.stl、part.step，以及对话顶部的“规格”“模型”标签可以查看结果。`
 
 class HttpError extends Error {
   constructor(status, code, message) {
