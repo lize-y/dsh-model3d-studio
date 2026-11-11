@@ -18,6 +18,29 @@ import {
 
 export const inject = ['tools', 'systemPrompt']
 
+/**
+ * Convert the readable property map into a raw JSON Schema object.
+ *
+ * `ctx.tools.register` stores a definition as-is (unlike `defineTool`, which
+ * compiles an authoring property map), and model providers reject a tool whose
+ * `parameters` is not `type: "object"`.
+ */
+function parameterSchema(map) {
+  const properties = {}
+  const required = []
+  for (const [name, definition] of Object.entries(map)) {
+    const { required: isRequired, ...rest } = definition
+    properties[name] = rest
+    if (isRequired === true) required.push(name)
+  }
+  return {
+    type: 'object',
+    additionalProperties: false,
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  }
+}
+
 export function apply(ctx, config = {}) {
   const root = resolveWorkRoot(ctx, config)
   const python = resolvePython(ctx, config, root)
@@ -35,7 +58,7 @@ export function apply(ctx, config = {}) {
         name: 'model3d_spec',
         description:
           'Save the engineering specification for the part to model. Call it once requirements are clear and before model3d_build. All dimensions are millimetres. Use the flat fields: keep every string short (one line per feature) so the call stays compact.',
-        parameters: {
+        parameters: parameterSchema({
           title: {
             type: 'string',
             required: true,
@@ -85,7 +108,7 @@ export function apply(ctx, config = {}) {
             description: 'Drawing notes for the modeler; at most 6 short entries.',
             items: { type: 'string' },
           },
-        },
+        }),
         output: {
           schema: {
             type: 'object',
@@ -132,11 +155,7 @@ export function apply(ctx, config = {}) {
         name: 'model3d_build',
         description:
           'Generate and execute a build123d model from the engineering specification saved by model3d_spec. Writes part.py, part.stl, part.step and part.json into the current workspace root, and exposes the result in the conversation Spec/Model tabs. Call only after model3d_spec.',
-        parameters: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {},
-        },
+        parameters: parameterSchema({}),
         output: {
           schema: {
             type: 'object',
