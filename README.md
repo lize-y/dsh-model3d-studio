@@ -17,6 +17,10 @@
 - **工作区文件**：生成文件写入当前会话工作区。
 - **会话级隔离**：规格和模型按 Session ID 分开保存。
 
+## 建模技能
+
+预设注册运行时技能 `model3d-modeling`：build123d API 速查、坐标约定、典型结构、常见陷阱与 `part.spec.md` 格式。AI 用 `skill` 工具按需加载，不需要读取其他会话的代码。
+
 ## 三视图
 
 `model3d_build` 会生成一张 A4 横向的工程图纸 `drawing.svg`：
