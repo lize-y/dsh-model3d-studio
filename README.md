@@ -19,16 +19,14 @@
 
 ## 三视图
 
-`model3d_build` 会从模型自动投影出三个正交视图（HLR 消隐）：
+`model3d_build` 会生成一张 A4 横向的工程图纸 `drawing.svg`：
 
-```text
-drawing-front.svg   主视图
-drawing-top.svg     俯视图
-drawing-right.svg   左视图
-drawing.svg         合并图纸
-```
+- 第一角投影的 **主视图 / 俯视图 / 左视图**，可见轮廓实线、不可见轮廓虚线
+- 总体尺寸标注（宽、高、深）与箭头
+- 孔系标注（数量、直径、孔距）
+- 标题栏：图名、比例、单位、材料、视图说明
 
-“规格”标签以卡片形式并排显示三个视图，虚线表示不可见轮廓，可下载合并后的 SVG。
+“规格”标签直接以图片方式显示这张图纸，并可下载 SVG。
 
 每个会话拥有独立目录 `<workspace>/model3d/<session-id>/`，不会与其他会话共用 `part.py`。
 
