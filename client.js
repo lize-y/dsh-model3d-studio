@@ -145,6 +145,7 @@ window.__ModuleLoader__.load({
         emptyModelBody: '规格确认后，AI 会调用 model3d_build 生成可旋转查看的模型。',
         errorTitle: '无法读取建模数据',
         errorBody: '{error}',
+        specHint: '让 AI 在 part.spec.md 里写工程规格，这里会显示尺寸、公差与备注。',
         notModelingTitle: '这不是 3D 建模会话',
         notModelingBody: '新建会话时选择“3D 建模”预设即可使用规格和模型标签。',
       },
@@ -339,6 +340,7 @@ window.__ModuleLoader__.load({
         emptyModelBody: 'Once the specification is confirmed, the AI will call model3d_build to generate a model.',
         errorTitle: 'Could not read modeling data',
         errorBody: '{error}',
+        specHint: 'Ask the AI to write the engineering specification in part.spec.md; dimensions, tolerances and notes appear here.',
         notModelingTitle: 'This is not a 3D modeling session',
         notModelingBody: 'Create a session with the 3D Modeling preset to use the Specification and Model tabs.',
       },
@@ -1154,6 +1156,7 @@ window.__ModuleLoader__.load({
 .m3d-drawing-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
 .m3d-drawing-link { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
 .m3d-drawing-link:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
+.m3d-doc-hint { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
 .m3d-doc-body { display: flex; flex-direction: column; gap: 8px; color: var(--dsw-alias-label-primary); font-size: 12.5px; line-height: 1.7; }
 .m3d-doc-body h1 { margin: 4px 0 2px; font-size: 18px; font-weight: 600; line-height: 1.35; }
 .m3d-doc-body h2 { margin: 12px 0 2px; font-size: 14px; font-weight: 600; line-height: 1.4; }
@@ -3003,7 +3006,8 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
         })
       }
       const docText = typeof state.data?.specText === 'string' ? state.data.specText.trim() : ''
-      if (docText) {
+      const hasDrawings = Boolean(state.data?.drawings)
+      if (docText || hasDrawings) {
         return h(
           'div',
           { className: 'm3d-session-view' },
@@ -3028,10 +3032,12 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
                   'STL',
                 ),
               ),
-              state.data?.drawings
+              hasDrawings
                 ? h(DrawingSheet, { drawings: state.data.drawings, t })
                 : null,
-              h(MarkdownDoc, { text: docText, t }),
+              docText
+                ? h(MarkdownDoc, { text: docText, t })
+                : h('p', { className: 'm3d-doc-hint' }, t('session.specHint')),
             ),
           ),
         )
