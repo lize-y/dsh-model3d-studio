@@ -127,6 +127,12 @@ window.__ModuleLoader__.load({
         valid: '实体有效',
         invalid: '实体待检查',
       },
+      drawing: {
+        front: '主视图',
+        top: '俯视图',
+        right: '左视图',
+        note: '由模型自动生成的三视图（虚线为不可见轮廓）',
+      },
       session: {
         spec: '规格',
         model: '模型',
@@ -314,6 +320,12 @@ window.__ModuleLoader__.load({
         stats: 'Size {size} mm · Volume {volume} cm³ · {faces} faces',
         valid: 'Valid solid',
         invalid: 'Needs review',
+      },
+      drawing: {
+        front: 'Front',
+        top: 'Top',
+        right: 'Left',
+        note: 'Three views generated from the model (dashed lines are hidden edges)',
       },
       session: {
         spec: 'Spec',
@@ -1124,6 +1136,24 @@ window.__ModuleLoader__.load({
 .m3d-doc-head h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); flex: 1; }
 .m3d-doc-source { color: var(--dsw-alias-label-secondary); font-size: 10.5px; text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
 .m3d-doc-source:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
+.m3d-drawing { margin: 0 0 18px; }
+.m3d-drawing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.m3d-drawing-view {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+}
+.m3d-drawing-view img { width: 100%; height: auto; max-height: 190px; object-fit: contain; display: block; }
+.m3d-drawing-view figcaption { font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
+.m3d-drawing-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 10.5px; color: var(--dsw-alias-label-secondary); }
+.m3d-drawing-link { display: inline-flex; align-items: center; gap: 4px; color: var(--dsw-alias-label-secondary); text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
+.m3d-drawing-link:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
 .m3d-doc-body { display: flex; flex-direction: column; gap: 8px; color: var(--dsw-alias-label-primary); font-size: 12.5px; line-height: 1.7; }
 .m3d-doc-body h1 { margin: 4px 0 2px; font-size: 18px; font-weight: 600; line-height: 1.35; }
 .m3d-doc-body h2 { margin: 12px 0 2px; font-size: 14px; font-weight: 600; line-height: 1.4; }
@@ -2906,6 +2936,48 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
       return h('div', { className: 'm3d-doc-body' }, blocks)
     }
 
+    function DrawingSheet({ drawings, t }) {
+      const views = [
+        ['front', t('drawing.front')],
+        ['top', t('drawing.top')],
+        ['right', t('drawing.right')],
+      ]
+      return h(
+        'div',
+        { className: 'm3d-drawing' },
+        h(
+          'div',
+          { className: 'm3d-drawing-grid' },
+          views.map(([key, label]) =>
+            h(
+              'figure',
+              { className: 'm3d-drawing-view', key },
+              h('img', {
+                src: drawings[key],
+                alt: label,
+                loading: 'lazy',
+                draggable: false,
+              }),
+              h('figcaption', null, label),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'm3d-drawing-foot' },
+          h('span', null, t('drawing.note')),
+          drawings.sheet
+            ? h(
+                'a',
+                { className: 'm3d-drawing-link', href: `${drawings.sheet}?download=1`, download: 'drawing.svg' },
+                h(Icon, { name: 'download', size: 11 }),
+                'SVG',
+              )
+            : null,
+        ),
+      )
+    }
+
     function SessionSpecView({ sessionId, t, useProjection }) {
       const preset = useProjection('agentPreset')
       const state = useSessionData(sessionId)
@@ -2956,6 +3028,9 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
                   'STL',
                 ),
               ),
+              state.data?.drawings
+                ? h(DrawingSheet, { drawings: state.data.drawings, t })
+                : null,
               h(MarkdownDoc, { text: docText, t }),
             ),
           ),

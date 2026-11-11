@@ -41,7 +41,12 @@ const SESSION_FILES = {
   'part.step': 'application/step',
   'part.py': 'text/plain; charset=utf-8',
   'part.json': 'application/json; charset=utf-8',
+  'drawing.svg': 'image/svg+xml',
+  'drawing-front.svg': 'image/svg+xml',
+  'drawing-top.svg': 'image/svg+xml',
+  'drawing-right.svg': 'image/svg+xml',
 }
+const DRAWING_FILES = ['drawing.svg', 'drawing-front.svg', 'drawing-top.svg', 'drawing-right.svg']
 const MIME = {
   'model.stl': 'model/stl',
   'model.step': 'application/step',
@@ -992,7 +997,17 @@ function sessionDirectory(ctx, sessionId) {
   return ctx.get('workingDirectory')?.get(session)
 }
 
-export function sessionModelDirectory(cwd, sessionId) {
+export function drawingUrls(sessionId) {
+  const base = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}`
+  return {
+    front: `${base}/drawing-front.svg`,
+    top: `${base}/drawing-top.svg`,
+    right: `${base}/drawing-right.svg`,
+    sheet: `${base}/drawing.svg`,
+  }
+}
+
+function sessionModelDirectory(cwd, sessionId) {
   return path.join(cwd, '.model3d', 'sessions', sessionId)
 }
 
@@ -1063,6 +1078,17 @@ export async function compileSessionModel(ctx, config, root, python, cwd, sessio
   const stlUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.stl`
   const stepUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.step`
   const codeUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.py`
+  await mkdir(modelDir, { recursive: true })
+  const views = []
+  for (const file of DRAWING_FILES) {
+    try {
+      await copyFile(path.join(runDir, file), path.join(modelDir, file))
+      views.push(file === 'drawing.svg' ? 'sheet' : file.replace('drawing-', '').replace('.svg', ''))
+    } catch {
+      // This view did not render; skip it.
+    }
+  }
+
   const record = {
     id,
     title,
@@ -1072,10 +1098,9 @@ export async function compileSessionModel(ctx, config, root, python, cwd, sessio
     stlUrl,
     stepUrl,
     codeUrl,
+    views,
     createdAt,
   }
-
-  await mkdir(modelDir, { recursive: true })
   await copyFile(path.join(runDir, 'model.stl'), path.join(modelDir, 'part.stl'))
   await copyFile(path.join(runDir, 'model.step'), path.join(modelDir, 'part.step'))
   await writeFile(path.join(modelDir, 'part.py'), `${code.trim()}\n`, 'utf8')
@@ -1094,6 +1119,7 @@ export async function compileSessionModel(ctx, config, root, python, cwd, sessio
     id,
     title,
     specText: record.specText,
+    views,
     code,
     meta,
     stlUrl,
@@ -1530,6 +1556,7 @@ export function apply(ctx, config = {}) {
       path: cwd,
       spec: spec ?? state?.spec ?? null,
       specText,
+      drawings: model ? drawingUrls(sessionId) : null,
       model,
       hasSpec: Boolean(spec ?? state?.spec),
       hasModel: Boolean(model),
