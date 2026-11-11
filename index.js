@@ -61,15 +61,15 @@ export const MODEL3D_SYSTEM = `## 3D 建模工作区
 当用户要求设计、建模或修改一个实体零件时，按机械工程师的方式工作：
 
 1. 先确认用途、总体尺寸、关键几何特征、材料/工艺和安装接口。每轮最多问 2 个最关键的问题；能采用合理工程默认值的细节不要反复追问，写进规格的“假设”。
-2. 规格明确后，自己直接编写 build123d 的 Python 代码，用普通的文件写入工具保存到当前工作区根目录的 part.py。代码要求：
+2. 规格明确后，自己直接编写 build123d 的 Python 代码，用文件写入工具保存到本会话专属目录（绝对路径 {{model3d_dir}}）的 part.py。这个目录只属于当前会话，不要去改其他会话或工作区根目录下的文件。代码要求：
    - 只导入 build123d 与 math；
    - 参数化，所有尺寸用毫米，变量名带注释；
    - 最终必须把实体赋值给变量 part；
    - 不要调用导出函数（export_stl / export_step / export_gltf / export_brep），不要写文件、不要联网，不要使用 exec / eval / open / subprocess / __import__。
-3. 同时在当前工作区根目录写一个 part.spec.md，用 Markdown 写工程制图描述：标题、总体尺寸、几何特征（每项一行，含尺寸与位置）、材料、工艺、公差、表面、假设、制图备注。这是“规格”标签页显示的内容，保持精炼（每行一句话，总长 1200 字以内），不要写 JSON。
-4. 然后调用 model3d_build 工具：它只负责编译并运行 part.py、校验几何、导出 STL/STEP 并刷新“模型”标签页。不要让工具传代码，工具从工作区读取文件。
+3. 同时在 {{model3d_dir}} 里写一个 part.spec.md，用 Markdown 写工程制图描述：标题、总体尺寸、几何特征（每项一行，含尺寸与位置）、材料、工艺、公差、表面、假设、制图备注。这是“规格”标签页显示的内容，保持精炼（每行一句话，总长 1200 字以内），不要写 JSON。
+4. 然后调用 model3d_build 工具：它只负责编译并运行该目录下的 part.py、校验几何、导出 STL/STEP 并刷新“模型”标签页。不要让工具传代码，工具从会话目录读取文件。
 5. 如果工具返回 Python 或几何错误，直接修改 part.py 后再次调用 model3d_build。不要伪造成功结果，也不要连续重试超过 3 次。
-6. 生成成功后告诉用户模型已生成，并说明工作区根目录下的 part.py、part.stl、part.step，以及对话顶部的“规格”“模型”标签可以查看结果。`
+6. 生成成功后告诉用户模型已生成，并说明该会话目录下的 part.py、part.stl、part.step，以及对话顶部的“规格”“模型”标签可以查看结果。`
 
 class HttpError extends Error {
   constructor(status, code, message) {
@@ -1007,8 +1007,39 @@ export function drawingUrls(sessionId) {
   }
 }
 
+/**
+ * Per-session modeling directory: one conversation owns one folder under
+ * `<workspace>/model3d/<session-id>/`, so a new session never inherits a
+ * previous session's part.py.
+ */
+export function sessionWorkDir(cwd, sessionId) {
+  return path.join(cwd, 'model3d', sessionId)
+}
+
 function sessionModelDirectory(cwd, sessionId) {
-  return path.join(cwd, '.model3d', 'sessions', sessionId)
+  return path.join(sessionWorkDir(cwd, sessionId), '.model3d')
+}
+
+/**
+ * Resolve the directory a session reads its model from, tolerating the older
+ * shared-workspace layout where files lived directly in the workspace root.
+ */
+async function resolveSessionDir(cwd, sessionId) {
+  const dir = sessionWorkDir(cwd, sessionId)
+  for (const file of ['part.stl', 'part.py', 'part.spec.md']) {
+    try {
+      await access(path.join(dir, file))
+      return { dir, legacy: false }
+    } catch {
+      // Keep checking this session's own folder first.
+    }
+  }
+  try {
+    await access(path.join(cwd, 'part.stl'))
+    return { dir: cwd, legacy: true }
+  } catch {
+    return { dir, legacy: false }
+  }
 }
 
 const SPEC_FILE_NAMES = ['part.spec.md', 'part.md', 'SPEC.md']
@@ -1035,14 +1066,32 @@ async function readSessionSpecText(cwd, modelDir) {
  * no second model call, no long tool argument, and no token budget shared with
  * the main answer. This function only runs and packages the geometry.
  */
-export async function compileSessionModel(ctx, config, root, python, cwd, sessionId, scriptPath) {
-  const modelDir = sessionModelDirectory(cwd, sessionId)
-  const source = scriptPath ? path.resolve(cwd, scriptPath) : path.join(cwd, 'part.py')
+export async function compileSessionModel(ctx, config, root, python, baseCwd, sessionId, scriptPath) {
+  const dir = sessionWorkDir(baseCwd, sessionId)
+  const modelDir = sessionModelDirectory(baseCwd, sessionId)
+  await mkdir(dir, { recursive: true })
+  const source = scriptPath ? path.resolve(dir, scriptPath) : path.join(dir, 'part.py')
   let code
   try {
     code = await readFile(source, 'utf8')
   } catch {
-    throw new HttpError(400, 'script-missing', '工作区里没有 build123d 脚本，请先写 part.py')
+    // A part.py written at the workspace root by an older layout is adopted
+    // into this session's own folder instead of being silently reused.
+    if (!scriptPath) {
+      try {
+        const strayPath = path.join(baseCwd, 'part.py')
+        const stray = await readFile(strayPath, 'utf8')
+        await writeFile(source, stray, 'utf8')
+        code = stray
+        // Move, don't copy: the workspace root must not keep a part.py that a
+        // later session could mistake for its own model.
+        await rm(strayPath, { force: true }).catch(() => {})
+      } catch {
+        throw new HttpError(400, 'script-missing', '当前会话目录里没有 build123d 脚本，请先写 part.py')
+      }
+    } else {
+      throw new HttpError(400, 'script-missing', '当前会话目录里没有 build123d 脚本，请先写 part.py')
+    }
   }
   const invalid = validateGeneratedCode(code)
   if (invalid) throw new HttpError(422, 'invalid-model-script', invalid)
@@ -1068,7 +1117,7 @@ export async function compileSessionModel(ctx, config, root, python, cwd, sessio
   }
 
   const meta = json.meta ?? (await readMeta(runDir))
-  const specText = await readSessionSpecText(cwd, modelDir)
+  const specText = await readSessionSpecText(dir, modelDir)
   const titleFromSpec = specText?.text
     .split(/\r?\n/)
     .map((line) => line.replace(/^#+\s*/, '').trim())
@@ -1108,10 +1157,9 @@ export async function compileSessionModel(ctx, config, root, python, cwd, sessio
   await writeFile(path.join(modelDir, 'state.json'), JSON.stringify(record, null, 2), 'utf8')
   if (specText) await writeFile(path.join(modelDir, 'spec.md'), specText.text, 'utf8')
 
-  // Keep the latest visible copy at the workspace root for the file browser.
-  await copyFile(path.join(runDir, 'model.stl'), path.join(cwd, 'part.stl'))
-  await copyFile(path.join(runDir, 'model.step'), path.join(cwd, 'part.step'))
-  await writeFile(path.join(cwd, 'part.json'), JSON.stringify(record, null, 2), 'utf8')
+  await copyFile(path.join(runDir, 'model.stl'), path.join(dir, 'part.stl'))
+  await copyFile(path.join(runDir, 'model.step'), path.join(dir, 'part.step'))
+  await writeFile(path.join(dir, 'part.json'), JSON.stringify(record, null, 2), 'utf8')
 
   return {
     ok: true,
@@ -1512,9 +1560,11 @@ export function apply(ctx, config = {}) {
     if (req.method !== 'GET') throw new HttpError(405, 'method-not-allowed', '仅支持 GET')
     const url = new URL(req.url ?? '/', 'http://x')
     const sessionId = url.searchParams.get('sessionId') ?? ''
-    const cwd = sessionDirectory(ctx, sessionId)
-    if (!cwd) throw new HttpError(404, 'session-unavailable', '当前会话目录不可用')
-    const modelDir = sessionModelDirectory(cwd, sessionId)
+    const baseCwd = sessionDirectory(ctx, sessionId)
+    if (!baseCwd) throw new HttpError(404, 'session-unavailable', '当前会话目录不可用')
+    const resolved = await resolveSessionDir(baseCwd, sessionId)
+    const cwd = resolved.dir
+    const modelDir = resolved.legacy ? path.join(cwd, '.model3d') : sessionModelDirectory(baseCwd, sessionId)
     let spec = null
     let state = null
     let specText = null
@@ -1554,6 +1604,8 @@ export function apply(ctx, config = {}) {
       ok: true,
       sessionId,
       path: cwd,
+      sessionDir: sessionWorkDir(baseCwd, sessionId),
+      legacyLayout: resolved.legacy,
       spec: spec ?? state?.spec ?? null,
       specText,
       drawings: model ? drawingUrls(sessionId) : null,
@@ -1571,9 +1623,17 @@ export function apply(ctx, config = {}) {
     if (!rawSession || !rawFile || !SESSION_FILES[rawFile]) {
       throw new HttpError(404, 'not-found', '文件不存在')
     }
-    const cwd = sessionDirectory(ctx, rawSession)
-    if (!cwd) throw new HttpError(404, 'session-unavailable', '当前会话目录不可用')
-    const target = path.join(sessionModelDirectory(cwd, rawSession), rawFile)
+    const baseCwd = sessionDirectory(ctx, rawSession)
+    if (!baseCwd) throw new HttpError(404, 'session-unavailable', '当前会话目录不可用')
+    const resolved = await resolveSessionDir(baseCwd, rawSession)
+    const modelDir = resolved.legacy ? path.join(resolved.dir, '.model3d') : sessionModelDirectory(baseCwd, rawSession)
+    const inModelDir = path.join(modelDir, rawFile)
+    let target = inModelDir
+    try {
+      await access(inModelDir)
+    } catch {
+      target = path.join(resolved.dir, rawFile)
+    }
     let info
     try {
       info = await stat(target)

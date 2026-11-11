@@ -2,16 +2,17 @@
  * Agent-side half of the 3D modeling preset.
  *
  * This plugin is mounted only for Sessions created with the `model3d` agent
- * preset. It contributes the two modeling tools and the workflow instructions,
- * while the profile-level plugin serves the HTTP API and Client tabs.
+ * preset. It contributes the build tool, the workflow instructions, and this
+ * Session's own modeling folder, while the profile-level plugin serves the
+ * HTTP API and Client tabs.
  */
-import path from 'node:path'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import {
   MODEL3D_SYSTEM,
   compileSessionModel,
   resolvePython,
   resolveWorkRoot,
+  sessionWorkDir,
 } from './index.js'
 
 export const inject = ['tools', 'systemPrompt']
@@ -100,13 +101,47 @@ export function apply(ctx, config = {}) {
     'model3d-preset: build tool',
   )
 
-  ctx.effect(
-    () =>
-      ctx.systemPrompt.section({
-        name: 'model3d-workflow',
-        order: 850,
-        text: MODEL3D_SYSTEM,
-      }),
-    'model3d-preset: modeling instructions',
-  )
+  // The preset's plugin context is per Agent, so one session owns one folder:
+  // <workspace>/model3d/<session-id>/. The absolute path reaches the prompt
+  // through an interpolated variable, and the build tool reads the same path.
+  ctx.effect(() => {
+    const disposers = new Map()
+    const onCreated = ctx.on('agent/created', async (payload) => {
+      const agent = payload && payload.agent
+      if (!agent || typeof agent.id !== 'string') return
+      try {
+        const base = ctx.get('workingDirectory')?.get(agent.session) ?? ctx.get('workingDirectory')?.defaultDirectory
+        if (!base) return
+        const dir = sessionWorkDir(base, agent.id)
+        await mkdir(dir, { recursive: true })
+        const dispose = agent.ctx.effect(() => {
+          const disposeVariable = agent.ctx.systemPrompt.variable('model3d_dir', () => dir)
+          const disposeSection = agent.ctx.systemPrompt.section({
+            name: 'model3d-workflow',
+            order: 850,
+            text: MODEL3D_SYSTEM,
+          })
+          return () => {
+            disposeSection?.()
+            disposeVariable?.()
+          }
+        })
+        disposers.set(agent.id, dispose)
+      } catch (error) {
+        const logger = ctx.logger
+        if (logger && typeof logger.warn === 'function') logger.warn(error)
+      }
+    })
+    return () => {
+      for (const dispose of disposers.values()) {
+        try {
+          dispose()
+        } catch {
+          // Ignore teardown failures.
+        }
+      }
+      disposers.clear()
+      if (typeof onCreated === 'function') onCreated()
+    }
+  }, 'model3d-preset: per-session modeling folder')
 }

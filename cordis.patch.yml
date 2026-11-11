@@ -17,6 +17,14 @@
               prefix: You are a mechanical engineer and 3D modeling assistant. Ask focused engineering questions, then use the model3d tools to save a specification and generate the part.
           - id: time-context
             name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
           - id: tool-ask-user
             name: '@deepseek-ai/dsh-tool-ask-user'
           - id: model3d-agent
