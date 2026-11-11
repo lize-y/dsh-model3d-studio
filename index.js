@@ -55,11 +55,15 @@ export const MODEL3D_SYSTEM = `## 3D 建模工作区
 
 当用户要求设计、建模或修改一个实体零件时，按机械工程师的方式工作：
 
-1. 先确认用途、总体尺寸、关键几何特征、材料/工艺和安装接口。每轮最多问 2 个最关键的问题；能采用合理工程默认值的细节不要反复追问，写入规格的 assumptions。
-2. 当零件已经可以准确建模时，调用 model3d_spec 保存完整工程规格（单位 mm）。规格要包含 title、summary、overall、features、material、process、tolerances、surface、assumptions、drawingNotes。
-3. 规格保存后调用 model3d_build 生成 build123d 模型。不要自己编写或执行 build123d/Python；这两个工具会负责代码生成、执行、校验和导出。
-4. model3d_spec 使用扁平字段，保持精简：title ≤ 60 字，summary ≤ 200 字，features 每项 ≤ 120 字且不超过 8 项，assumptions/drawingNotes 各 ≤ 6 项。不要构造深层嵌套对象，也不要堆砌长篇说明——细节可以留在对话里。
-5. 如果建模失败，根据工具返回的 Python/几何错误修正规格或 assumptions，然后重新调用 model3d_spec 和 model3d_build。不要伪造成功结果。
+1. 先确认用途、总体尺寸、关键几何特征、材料/工艺和安装接口。每轮最多问 2 个最关键的问题；能采用合理工程默认值的细节不要反复追问，写进规格的“假设”。
+2. 规格明确后，自己直接编写 build123d 的 Python 代码，用普通的文件写入工具保存到当前工作区根目录的 part.py。代码要求：
+   - 只导入 build123d 与 math；
+   - 参数化，所有尺寸用毫米，变量名带注释；
+   - 最终必须把实体赋值给变量 part；
+   - 不要调用导出函数（export_stl / export_step / export_gltf / export_brep），不要写文件、不要联网，不要使用 exec / eval / open / subprocess / __import__。
+3. 同时在当前工作区根目录写一个 part.spec.md，用 Markdown 写工程制图描述：标题、总体尺寸、几何特征（每项一行，含尺寸与位置）、材料、工艺、公差、表面、假设、制图备注。这是“规格”标签页显示的内容，保持精炼（每行一句话，总长 1200 字以内），不要写 JSON。
+4. 然后调用 model3d_build 工具：它只负责编译并运行 part.py、校验几何、导出 STL/STEP 并刷新“模型”标签页。不要让工具传代码，工具从工作区读取文件。
+5. 如果工具返回 Python 或几何错误，直接修改 part.py 后再次调用 model3d_build。不要伪造成功结果，也不要连续重试超过 3 次。
 6. 生成成功后告诉用户模型已生成，并说明工作区根目录下的 part.py、part.stl、part.step，以及对话顶部的“规格”“模型”标签可以查看结果。`
 
 class HttpError extends Error {
@@ -992,6 +996,113 @@ export function sessionModelDirectory(cwd, sessionId) {
   return path.join(cwd, '.model3d', 'sessions', sessionId)
 }
 
+const SPEC_FILE_NAMES = ['part.spec.md', 'part.md', 'SPEC.md']
+
+async function readSessionSpecText(cwd, modelDir) {
+  const candidates = [...SPEC_FILE_NAMES.map((name) => path.join(cwd, name)), path.join(modelDir, 'spec.md')]
+  for (const candidate of candidates) {
+    try {
+      const text = await readFile(candidate, 'utf8')
+      const trimmed = text.trim()
+      if (trimmed) return { text: clip(trimmed, 20000), file: candidate }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined
+}
+
+/**
+ * Compile a build123d script the agent wrote itself, export STL/STEP, and
+ * publish the result to the Session's Spec/Model tabs.
+ *
+ * The agent owns the code: it writes `part.py` with its normal file tools, so
+ * no second model call, no long tool argument, and no token budget shared with
+ * the main answer. This function only runs and packages the geometry.
+ */
+export async function compileSessionModel(ctx, config, root, python, cwd, sessionId, scriptPath) {
+  const modelDir = sessionModelDirectory(cwd, sessionId)
+  const source = scriptPath ? path.resolve(cwd, scriptPath) : path.join(cwd, 'part.py')
+  let code
+  try {
+    code = await readFile(source, 'utf8')
+  } catch {
+    throw new HttpError(400, 'script-missing', '工作区里没有 build123d 脚本，请先写 part.py')
+  }
+  const invalid = validateGeneratedCode(code)
+  if (invalid) throw new HttpError(422, 'invalid-model-script', invalid)
+
+  const id = newId()
+  const runDir = path.join(modelDir, 'runs', id)
+  await mkdir(path.join(runDir, '.cache'), { recursive: true })
+  const codePath = path.join(runDir, 'generated.py')
+  await writeFile(codePath, `${code.trim()}\n`, 'utf8')
+
+  const result = await runProcess(python, [path.join(HERE, 'runner.py'), codePath], {
+    cwd: runDir,
+    env: subprocessEnv(root, root, runDir, config),
+    timeoutMs: config.timeoutMs ?? 180000,
+  })
+  const json = findLastJson(result.stdout)
+  if (result.code !== 0 || !json?.ok) {
+    throw new HttpError(
+      422,
+      'model-build-failed',
+      clip(json?.error ?? result.stderr ?? result.stdout ?? 'build123d 执行失败', 6000),
+    )
+  }
+
+  const meta = json.meta ?? (await readMeta(runDir))
+  const specText = await readSessionSpecText(cwd, modelDir)
+  const titleFromSpec = specText?.text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^#+\s*/, '').trim())
+    .find((line) => line.length > 0)
+  const title = clip(titleFromSpec ?? '3D 模型', 160)
+  const createdAt = Date.now()
+  const stlUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.stl`
+  const stepUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.step`
+  const codeUrl = `${ROUTE}/session-files/${encodeURIComponent(sessionId)}/part.py`
+  const record = {
+    id,
+    title,
+    specText: specText?.text ?? '',
+    code,
+    meta,
+    stlUrl,
+    stepUrl,
+    codeUrl,
+    createdAt,
+  }
+
+  await mkdir(modelDir, { recursive: true })
+  await copyFile(path.join(runDir, 'model.stl'), path.join(modelDir, 'part.stl'))
+  await copyFile(path.join(runDir, 'model.step'), path.join(modelDir, 'part.step'))
+  await writeFile(path.join(modelDir, 'part.py'), `${code.trim()}\n`, 'utf8')
+  await writeFile(path.join(modelDir, 'part.json'), JSON.stringify(record, null, 2), 'utf8')
+  await writeFile(path.join(modelDir, 'state.json'), JSON.stringify(record, null, 2), 'utf8')
+  if (specText) await writeFile(path.join(modelDir, 'spec.md'), specText.text, 'utf8')
+
+  // Keep the latest visible copy at the workspace root for the file browser.
+  await copyFile(path.join(runDir, 'model.stl'), path.join(cwd, 'part.stl'))
+  await copyFile(path.join(runDir, 'model.step'), path.join(cwd, 'part.step'))
+  await writeFile(path.join(cwd, 'part.json'), JSON.stringify(record, null, 2), 'utf8')
+
+  return {
+    ok: true,
+    sessionId,
+    id,
+    title,
+    specText: record.specText,
+    code,
+    meta,
+    stlUrl,
+    stepUrl,
+    codeUrl,
+    attempts: 1,
+  }
+}
+
 export async function buildSessionModel(ctx, config, root, python, cwd, sessionId, spec) {
   if (!spec) throw new HttpError(400, 'missing-spec', '缺少工程规格，无法建模')
   const llm = ctx.get('llm')
@@ -1112,6 +1223,7 @@ async function callModel(ctx, { system, prompt, maxTokens, timeoutMs, selection 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let text = ''
+  let reasoning = ''
   let failure
   let finishKind
   try {
@@ -1127,6 +1239,8 @@ async function callModel(ctx, { system, prompt, maxTokens, timeoutMs, selection 
     for await (const chunk of stream) {
       if (chunk.type === 'text-delta') {
         text += chunk.text
+      } else if (chunk.type === 'reasoning-delta') {
+        reasoning += chunk.text
       } else if (chunk.type === 'finish') {
         finishKind = chunk.reason?.kind
         if (chunk.reason?.kind === 'error' || chunk.reason?.kind === 'aborted') {
@@ -1141,11 +1255,17 @@ async function callModel(ctx, { system, prompt, maxTokens, timeoutMs, selection 
     throw new Error(`${failure.code ?? 'llm-error'}: ${failure.message ?? '模型调用失败'}`)
   }
   if (!text.trim()) {
-    throw new Error(
+    // A reasoning model can spend the whole budget on hidden reasoning and
+    // never emit visible text. Keep the reasoning so the caller can salvage
+    // any code fence it contains, and report a retryable failure otherwise.
+    const error = new Error(
       finishKind === 'max-tokens'
-        ? '模型在输出文本前耗尽了 token（finish: max-tokens）'
+        ? `模型在输出可见文本前耗尽了 token 预算（maxTokens=${maxTokens}，finish: max-tokens）`
         : `模型返回了空响应${finishKind ? `（finish: ${finishKind}）` : ''}`,
     )
+    error.reasoning = reasoning
+    error.finishKind = finishKind
+    throw error
   }
   return text
 }
@@ -1371,6 +1491,7 @@ export function apply(ctx, config = {}) {
     const modelDir = sessionModelDirectory(cwd, sessionId)
     let spec = null
     let state = null
+    let specText = null
     try {
       spec = normalizeSpec(JSON.parse(await readFile(path.join(modelDir, 'spec.json'), 'utf8')))
     } catch {
@@ -1380,6 +1501,13 @@ export function apply(ctx, config = {}) {
       state = JSON.parse(await readFile(path.join(modelDir, 'state.json'), 'utf8'))
     } catch {
       // No generated model yet.
+    }
+    if (state && typeof state === 'object' && typeof state.specText === 'string' && state.specText.trim()) {
+      specText = state.specText
+    }
+    if (!specText) {
+      const found = await readSessionSpecText(cwd, modelDir)
+      if (found) specText = found.text
     }
     let model = null
     if (state && typeof state === 'object') {
@@ -1401,6 +1529,7 @@ export function apply(ctx, config = {}) {
       sessionId,
       path: cwd,
       spec: spec ?? state?.spec ?? null,
+      specText,
       model,
       hasSpec: Boolean(spec ?? state?.spec),
       hasModel: Boolean(model),

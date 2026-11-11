@@ -134,7 +134,7 @@ window.__ModuleLoader__.load({
         noSession: '当前没有可用会话',
         noSessionBody: '请先在左侧打开一个会话。',
         emptySpecTitle: '还没有工程规格',
-        emptySpecBody: '在对话中描述零件，AI 会先调用 model3d_spec 保存工程规格。',
+        emptySpecBody: '在对话中描述零件，AI 会编写 part.spec.md 并把工程规格显示在这里。',
         emptyModelTitle: '还没有生成模型',
         emptyModelBody: '规格确认后，AI 会调用 model3d_build 生成可旋转查看的模型。',
         errorTitle: '无法读取建模数据',
@@ -322,7 +322,7 @@ window.__ModuleLoader__.load({
         noSession: 'No active session',
         noSessionBody: 'Open a conversation first.',
         emptySpecTitle: 'No engineering specification yet',
-        emptySpecBody: 'Describe the part in the conversation; the AI will save a specification with model3d_spec.',
+        emptySpecBody: 'Describe the part in the conversation; the AI writes part.spec.md and its content appears here.',
         emptyModelTitle: 'No model generated yet',
         emptyModelBody: 'Once the specification is confirmed, the AI will call model3d_build to generate a model.',
         errorTitle: 'Could not read modeling data',
@@ -1101,6 +1101,36 @@ window.__ModuleLoader__.load({
 .m3d-session-view { position: relative; height: 100%; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-base); }
 .m3d-session-stage { position: absolute; inset: 0; overflow: hidden; background: #14171a; }
 .m3d-session-loading { height: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--dsw-alias-label-secondary); font-size: 12.5px; }
+.m3d-doc-scroll { height: 100%; overflow: auto; padding: 24px; background: var(--dsw-alias-bg-base); }
+.m3d-doc {
+  width: min(820px, 100%);
+  margin: 0 auto;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 22px 26px 26px;
+}
+.m3d-doc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+.m3d-doc-head svg { color: var(--dsw-alias-label-secondary); flex: none; }
+.m3d-doc-head h1 { margin: 0; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); flex: 1; }
+.m3d-doc-source { color: var(--dsw-alias-label-secondary); font-size: 10.5px; text-decoration: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 1px 6px; }
+.m3d-doc-source:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
+.m3d-doc-body { display: flex; flex-direction: column; gap: 8px; color: var(--dsw-alias-label-primary); font-size: 12.5px; line-height: 1.7; }
+.m3d-doc-body h1 { margin: 4px 0 2px; font-size: 18px; font-weight: 600; line-height: 1.35; }
+.m3d-doc-body h2 { margin: 12px 0 2px; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.m3d-doc-body h3 { margin: 8px 0 0; font-size: 12.5px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.m3d-doc-body p { margin: 0; }
+.m3d-doc-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; color: var(--dsw-alias-label-secondary); }
+.m3d-doc-list li { list-style: disc; }
 .m3d-viewport { position: absolute; inset: 0; overflow: hidden; background: var(--dsw-alias-bg-base); }
 .m3d-viewport.has-model { background: #14171a; }
 .m3d-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
@@ -2826,6 +2856,56 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
       )
     }
 
+    function inlineText(line) {
+      return line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1')
+    }
+
+    function MarkdownDoc({ text, t }) {
+      const lines = String(text || '').replace(/\r/g, '').split('\n')
+      const blocks = []
+      let list = null
+      const flush = () => {
+        if (list) {
+          blocks.push(
+            h(
+              'ul',
+              { className: 'm3d-doc-list', key: `list-${blocks.length}` },
+              list.map((item, index) => h('li', { key: index }, inlineText(item))),
+            ),
+          )
+          list = null
+        }
+      }
+      lines.forEach((raw, index) => {
+        const line = raw.trim()
+        if (!line) {
+          flush()
+          return
+        }
+        const bullet = line.match(/^[-*+]\s+(.*)$/)
+        if (bullet) {
+          ;(list ||= []).push(bullet[1])
+          return
+        }
+        flush()
+        if (/^#\s/.test(line)) {
+          blocks.push(h('h1', { key: index }, inlineText(line.replace(/^#\s+/, ''))))
+          return
+        }
+        if (/^##\s/.test(line)) {
+          blocks.push(h('h2', { key: index }, inlineText(line.replace(/^##\s+/, ''))))
+          return
+        }
+        if (/^###\s/.test(line)) {
+          blocks.push(h('h3', { key: index }, inlineText(line.replace(/^###\s+/, ''))))
+          return
+        }
+        blocks.push(h('p', { key: index }, inlineText(line)))
+      })
+      flush()
+      return h('div', { className: 'm3d-doc-body' }, blocks)
+    }
+
     function SessionSpecView({ sessionId, t, useProjection }) {
       const preset = useProjection('agentPreset')
       const state = useSessionData(sessionId)
@@ -2849,6 +2929,37 @@ body:not([data-model3d-session="1"]) [data-conversation-tabs] button:nth-last-ch
           title: t('session.errorTitle'),
           body: t('session.errorBody', { error: state.error }),
         })
+      }
+      const docText = typeof state.data?.specText === 'string' ? state.data.specText.trim() : ''
+      if (docText) {
+        return h(
+          'div',
+          { className: 'm3d-session-view' },
+          h(
+            'div',
+            { className: 'm3d-doc-scroll' },
+            h(
+              'article',
+              { className: 'm3d-doc' },
+              h(
+                'div',
+                { className: 'm3d-doc-head' },
+                h(Icon, { name: 'spec', size: 15 }),
+                h('h1', null, t('spec.title')),
+                h(
+                  'a',
+                  {
+                    className: 'm3d-doc-source',
+                    href: `/api/model3d/session-files/${encodeURIComponent(sessionId)}/part.stl?download=1`,
+                    title: 'part.stl',
+                  },
+                  'STL',
+                ),
+              ),
+              h(MarkdownDoc, { text: docText, t }),
+            ),
+          ),
+        )
       }
       const spec = state.data && state.data.spec
       if (!spec) {
