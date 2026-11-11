@@ -30,10 +30,12 @@ drawing.svg         合并图纸
 
 “规格”标签以卡片形式并排显示三个视图，虚线表示不可见轮廓，可下载合并后的 SVG。
 
+每个会话拥有独立目录 `<workspace>/model3d/<session-id>/`，不会与其他会话共用 `part.py`。
+
 ## 生成文件
 
 ```text
-<session-workspace>/
+<workspace>/model3d/<session-id>/
 ├─ part.py
 ├─ part.stl
 ├─ part.step
